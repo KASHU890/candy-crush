@@ -13,6 +13,10 @@
   --gold: #ffd93d;
 }
 
+html, body {
+  overscroll-behavior: none;
+}
+
 body {
   font-family: 'Segoe UI', 'Poppins', system-ui, sans-serif;
   min-height: 100vh;
@@ -23,6 +27,10 @@ body {
   background-attachment: fixed;
   padding: 12px;
   overflow: hidden;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .game-container {
@@ -188,8 +196,36 @@ body {
 
 .overlay-card p {
   font-size: 0.95rem;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   font-weight: 600;
+  white-space: pre-line;
+}
+
+.overlay-stars {
+  font-size: 2.6rem;
+  letter-spacing: 12px;
+  margin-bottom: 12px;
+  text-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  animation: starPop 0.5s ease;
+}
+
+.overlay-stars.hidden {
+  display: none;
+}
+
+.star {
+  color: #ffd700;
+}
+
+.star-empty {
+  color: rgba(255, 255, 255, 0.35);
+  text-shadow: none;
+}
+
+@keyframes starPop {
+  0%   { transform: scale(0) rotate(-30deg); opacity: 0; }
+  70%  { transform: scale(1.25) rotate(8deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
 }
 
 .overlay-card button,

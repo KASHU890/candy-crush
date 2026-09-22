@@ -21,9 +21,11 @@
     moves: 30,
     level: 1,
     target: 1000,
+    candyTypes: 5,
     busy: false,
     running: false,
     firstMatch: true,
+    save: { level: 1, best: {} },
   };
 
   const boardEl = document.getElementById('board');
@@ -35,6 +37,7 @@
   const overlayEl = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlayTitle');
   const overlayText = document.getElementById('overlayText');
+  const overlayStarsEl = document.getElementById('overlayStars');
   const overlayBtn = document.getElementById('overlayBtn');
   const restartBtn = document.getElementById('restartBtn');
 
@@ -73,7 +76,7 @@
 
   // ---------- Board creation ----------
   function randomCandy() {
-    return Math.floor(Math.random() * CANDIES.length);
+    return Math.floor(Math.random() * state.candyTypes);
   }
 
   function createBoard() {
@@ -94,6 +97,68 @@
     if (c >= 2 && grid[r][c - 1] === v && grid[r][c - 2] === v) return true;
     if (r >= 2 && grid[r - 1][c] === v && grid[r - 2][c] === v) return true;
     return false;
+  }
+
+  // ---------- Levels & progress ----------
+  function getLevelConfig(l) {
+    return {
+      target: Math.floor(1000 * Math.pow(1.3, l - 1) / 10) * 10,
+      moves: Math.max(18, 30 - Math.floor((l - 1) / 2)),
+      types: Math.min(6, 5 + Math.floor((l - 1) / 4)),
+    };
+  }
+
+  function calcStars(score, target) {
+    if (score >= Math.ceil(target * 1.5)) return 3;
+    if (score >= Math.ceil(target * 1.25)) return 2;
+    return 1;
+  }
+
+  // optional test hook (?dbg in URL)
+  if (window.location.search.indexOf('dbg') !== -1) {
+    window.__game = {
+      state,
+      checkEndGame,
+      calcStars,
+      startLevel,
+    };
+  }
+
+  const SAVE_KEY = 'candyCrushSave';
+
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data && typeof data.level === 'number') {
+          const cfg = getLevelConfig(data.level);
+          state.save = {
+            level: Math.min(data.level, 999),
+            best: (data.best && typeof data.best === 'object') ? data.best : {},
+          };
+          state.level = Math.min(data.level, 999);
+          state.moves = cfg.moves;
+          state.target = cfg.target;
+          state.candyTypes = cfg.types;
+        }
+      }
+    } catch (e) {
+      state.save = { level: 1, best: {} };
+    }
+  }
+
+  function saveProgress() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(state.save));
+    } catch (e) { /* private mode / quota: ignore */ }
+  }
+
+  function recordCompletion(level, score, stars) {
+    const prev = state.save.best[level];
+    if (!prev || score > prev.score) {
+      state.save.best[level] = { score, stars };
+    }
   }
 
   // ---------- Rendering ----------
@@ -417,34 +482,51 @@
   }
 
   // ---------- Game flow ----------
-  function startGame(reset) {
+  function startLevel() {
     ensureAudio();
-    if (reset) {
-      state.board = createBoard();
-      state.score = 0;
-      state.moves = 30;
-      state.level = 1;
-      state.target = 1000;
-      state.firstMatch = true;
-      state.selected = null;
-      state.busy = false;
-    }
-    // handle no-move board
-    if (!anyMovesLeft()) state.board = createBoard();
+    const cfg = getLevelConfig(state.level);
+    state.score = 0;
+    state.moves = cfg.moves;
+    state.target = cfg.target;
+    state.candyTypes = cfg.types;
+    state.firstMatch = true;
+    state.selected = null;
+    state.busy = false;
     state.running = true;
+    state.board = createBoard();
+    if (!anyMovesLeft()) state.board = createBoard();
+    saveProgress();
     render();
     updateHud();
     closeOverlay();
+  }
+
+  function startNewGame() {
+    state.level = 1;
+    state.save = { level: 1, best: {} };
+    localStorage.removeItem(SAVE_KEY);
+    startLevel();
   }
 
   function closeOverlay() {
     overlayEl.classList.add('hidden');
   }
 
-  function showOverlay(title, text, btnLabel) {
+  function renderStars(stars) {
+    let html = '';
+    for (let i = 1; i <= 3; i++) {
+      html += `<span class="star${i <= stars ? '' : ' star-empty'}">★</span>`;
+    }
+    overlayStarsEl.innerHTML = html;
+    overlayStarsEl.classList.remove('hidden');
+  }
+
+  function showOverlay(title, text, btnLabel, stars) {
     overlayTitle.textContent = title;
     overlayText.textContent = text;
     overlayBtn.textContent = btnLabel;
+    if (typeof stars === 'number') renderStars(stars);
+    else overlayStarsEl.classList.add('hidden');
     overlayEl.classList.remove('hidden');
   }
 
@@ -453,20 +535,19 @@
       if (state.score >= state.target) {
         state.running = false;
         sounds.win();
+        const stars = calcStars(state.score, state.target);
+        recordCompletion(state.level, state.score, stars);
         state.level++;
-        state.moves = 30;
-        state.target = Math.floor(state.target * 1.6);
-        state.board = createBoard();
-        if (!anyMovesLeft()) state.board = createBoard();
-        render();
-        updateHud();
-        showOverlay('Level Complete! 🎉', `You reached ${state.score.toLocaleString()} points. Ready for Level ${state.level}?`, 'Next Level');
-        overlayBtn.onclick = () => { state.firstMatch = true; startGame(false); };
+        saveProgress();
+        showOverlay('Level Complete! 🎉',
+          `You scored ${state.score.toLocaleString()} points with ${stars} star${stars > 1 ? 's' : ''}.`,
+          'Next Level', stars);
+        overlayBtn.onclick = () => startLevel();
       } else {
         state.running = false;
         sounds.lose();
         showOverlay('Out of Moves 😢', `Score: ${state.score.toLocaleString()} / Target: ${state.target.toLocaleString()}`, 'Try Again');
-        overlayBtn.onclick = () => startGame(true);
+        overlayBtn.onclick = () => startLevel();
       }
     }
   }
@@ -476,18 +557,43 @@
     return new Promise(res => setTimeout(res, ms));
   }
 
+  // ---------- No-refresh guards ----------
+  document.addEventListener('submit', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R'))) {
+      // allow refresh only when not actively playing a running level
+      if (state.running && !state.busy) {
+        saveProgress();
+      }
+    }
+  });
+
   // ---------- Wire up ----------
   overlayBtn.addEventListener('click', () => {
     ensureAudio();
-    if (!state.running) startGame(true);
+    startLevel();
   });
 
   restartBtn.addEventListener('click', () => {
     ensureAudio();
-    startGame(true);
+    startLevel();
   });
 
-  // initial build
-  state.board = createBoard();
-  startGame(true);
+  // ---------- Boot ----------
+  loadProgress();
+  updateHud();
+  if (state.save.level > 1) {
+    state.level = state.save.level;
+    updateHud();
+    showOverlay('Welcome Back! 👋',
+      `Continuing from Level ${state.level}.`,
+      'Play');
+    overlayBtn.onclick = () => startLevel();
+  } else {
+    showOverlay('Candy Crush 🍬',
+      'Match 3+ candies before moves run out!\nMore stars = higher score.',
+      'Play');
+    overlayBtn.onclick = () => startLevel();
+  }
 })();

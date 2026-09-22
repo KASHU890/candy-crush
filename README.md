@@ -2,9 +2,11 @@
 
 A browser-based Candy Crush-style match-3 game with:
 - 8x8 colorful candy board
-- Swap & match 3+ candies
+- Swap (drag/swipe or tap-tap) to match 3+ candies
 - Cascading combos with score multipliers
-- 30 moves + target score per level, progressively harder levels
+- **Progressive level system** — each level gets a higher target, fewer moves, and harder candy sets (1–3 star ratings)
+- **Progress auto-save** (localStorage) — refresh ya ghalti se page reload ho jaye toh bhi wahi level se continue hota hai
+- Refresh-proof touches: pull-to-refresh, double-tap zoom, aur button-submit se page refresh block kiya gaya hai
 - Animated UI with sound effects (Web Audio API, no files needed)
 - Responsive design for mobile & desktop
 
