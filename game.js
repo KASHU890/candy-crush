@@ -163,6 +163,9 @@
 
   // ---------- Rendering ----------
   function render() {
+    if (!state.board.length) {
+      state.board = createBoard();
+    }
     boardEl.innerHTML = '';
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
@@ -583,6 +586,7 @@
   // ---------- Boot ----------
   loadProgress();
   updateHud();
+  render();
   if (state.save.level > 1) {
     state.level = state.save.level;
     updateHud();
