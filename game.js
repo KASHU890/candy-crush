@@ -3,6 +3,7 @@
 
   const ROWS = 8;
   const COLS = 8;
+  const SWIPE_THRESHOLD = 20;
   const CANDIES = [
     { emoji: '🍎', color: '#ff5a5a' },
     { emoji: '🍇', color: '#9b5afe' },
@@ -100,6 +101,10 @@
     boardEl.innerHTML = '';
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
+        const v = state.board[r][c];
+        if (v === null || v === undefined) {
+          state.board[r][c] = randomCandy();
+        }
         const cell = document.createElement('div');
         cell.className = 'cell';
         cell.dataset.row = r;
@@ -199,20 +204,25 @@
     state.selected = null;
     state.moves--;
     sounds.swap();
-
-    // visually swap
-    const el1 = cellEl(r1, c1);
-    const el2 = cellEl(r2, c2);
-    el1.classList.add('swap-anim');
-    el2.classList.add('swap-anim');
-    updateHud();
-    await wait(60);
-    render();
-    const m = findAllMatches();
-    await processMatches(m, 1);
-    state.busy = false;
-    updateHud();
-    checkEndGame();
+    try {
+      // visually swap
+      const el1 = cellEl(r1, c1);
+      const el2 = cellEl(r2, c2);
+      if (el1) el1.classList.add('swap-anim');
+      if (el2) el2.classList.add('swap-anim');
+      updateHud();
+      await wait(60);
+      render();
+      const m = findAllMatches();
+      await processMatches(m, 1);
+    } catch (err) {
+      console.warn('swap error', err);
+    } finally {
+      state.busy = false;
+      updateHud();
+      render();
+      checkEndGame();
+    }
   }
 
   async function processMatches(matches, combo) {
@@ -223,6 +233,7 @@
 
     // pop animation
     for (const { r, c } of matches) {
+      if (state.board[r][c] === null || state.board[r][c] === undefined) continue;
       const el = cellEl(r, c);
       if (el) {
         el.classList.add('pop-anim');
@@ -233,8 +244,10 @@
         ghost.className = 'cell pop-anim';
         ghost.textContent = emoji;
         ghost.style.backgroundColor = color;
-        cellEl(r, c).parentNode.insertBefore(ghost, cellEl(r, c).nextSibling);
-        setTimeout(() => ghost.remove(), 400);
+        if (el.parentNode && el.nextSibling) {
+          el.parentNode.insertBefore(ghost, el.nextSibling);
+          setTimeout(() => ghost.remove(), 400);
+        }
       }
     }
 
@@ -301,13 +314,19 @@
   }
 
   // ---------- Interaction ----------
-  function handleCellClick(e) {
+  // Supports both: tap-tap select, and Candy Crush style drag/swipe swap
+  let pointer = null; // { r, c, x, y, moved }
+
+  function clearSelection() {
+    if (state.selected) {
+      const el = cellEl(state.selected.r, state.selected.c);
+      if (el) el.classList.remove('selected');
+      state.selected = null;
+    }
+  }
+
+  function handleTap(r, c, cell) {
     if (!state.running || state.busy) return;
-    ensureAudio();
-    const cell = e.target.closest('.cell');
-    if (!cell) return;
-    const r = +cell.dataset.row;
-    const c = +cell.dataset.col;
 
     if (!state.selected) {
       state.selected = { r, c };
@@ -319,25 +338,77 @@
     const { r: sr, c: sc } = state.selected;
     const dist = Math.abs(r - sr) + Math.abs(c - sc);
     if (dist === 1) {
-      // clear selection state then swap
-      cellEl(sr, sc).classList.remove('selected');
-      state.selected = null;
+      clearSelection();
       trySwap(sr, sc, r, c);
     } else if (sr === r && sc === c) {
       cell.classList.remove('selected');
       state.selected = null;
     } else {
-      cellEl(sr, sc).classList.remove('selected');
+      const old = cellEl(sr, sc);
+      if (old) old.classList.remove('selected');
       state.selected = { r, c };
       cell.classList.add('selected');
       sounds.select();
     }
   }
 
+  function swapByDir(r, c, dr, dc) {
+    const tr = r + dr;
+    const tc = c + dc;
+    if (tr < 0 || tr >= ROWS || tc < 0 || tc >= COLS) return;
+    clearSelection();
+    trySwap(r, c, tr, tc);
+  }
+
+  function handleCellClick(e) {
+    if (!state.running || state.busy) return;
+    ensureAudio();
+    const cell = e.target.closest('.cell');
+    if (!cell) return;
+    handleTap(+cell.dataset.row, +cell.dataset.col, cell);
+  }
+
+  if (window.PointerEvent) {
+    boardEl.addEventListener('pointerdown', (e) => {
+      if (!state.running || state.busy) return;
+      ensureAudio();
+      const cell = e.target.closest ? e.target.closest('.cell') : null;
+      if (!cell) return;
+      pointer = { r: +cell.dataset.row, c: +cell.dataset.col, x: e.clientX, y: e.clientY, moved: false };
+      e.preventDefault();
+    });
+
+    boardEl.addEventListener('pointermove', (e) => {
+      if (!pointer || state.busy) return;
+      const dx = e.clientX - pointer.x;
+      const dy = e.clientY - pointer.y;
+      if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) return;
+      pointer.moved = true;
+      if (Math.abs(dx) >= Math.abs(dy)) swapByDir(pointer.r, pointer.c, 0, dx > 0 ? 1 : -1);
+      else swapByDir(pointer.r, pointer.c, dy > 0 ? 1 : -1, 0);
+      pointer = null;
+    });
+
+    boardEl.addEventListener('pointerup', (e) => {
+      if (!pointer) return;
+      const { r, c, moved } = pointer;
+      const cell = e.target.closest ? e.target.closest('.cell') : null;
+      pointer = null;
+      if (moved || !cell) return;
+      handleTap(r, c, cell);
+    });
+
+    boardEl.addEventListener('pointercancel', () => { pointer = null; });
+    boardEl.addEventListener('lostpointercapture', () => { pointer = null; });
+  } else {
+    boardEl.addEventListener('click', handleCellClick);
+  }
+
   function animateInvalid(r1, c1, r2, c2) {
     const a = cellEl(r1, c1);
     const b = cellEl(r2, c2);
     for (const el of [a, b]) {
+      if (!el) continue;
       el.style.transition = 'transform 0.12s ease';
       el.style.transform = 'translateX(-6px)';
       setTimeout(() => { el.style.transform = 'translateX(6px)'; }, 120);
@@ -406,8 +477,6 @@
   }
 
   // ---------- Wire up ----------
-  boardEl.addEventListener('click', handleCellClick);
-
   overlayBtn.addEventListener('click', () => {
     ensureAudio();
     if (!state.running) startGame(true);
