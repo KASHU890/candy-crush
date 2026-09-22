@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Candy Crush - Match 3 Game</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="game-container">
+    <header class="hud">
+      <div class="hud-item">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="score">0</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Moves</span>
+        <span class="hud-value" id="moves">30</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Level</span>
+        <span class="hud-value" id="level">1</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Target</span>
+        <span class="hud-value" id="target">1000</span>
+      </div>
+    </header>
+
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+
+    <div class="board-wrapper">
+      <div class="board" id="board"></div>
+      <div class="overlay" id="overlay">
+        <div class="overlay-card">
+          <h1 id="overlayTitle">Candy Crush</h1>
+          <p id="overlayText">Match 3 or more candies to score!</p>
+          <button id="overlayBtn">Play</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="tips">
+      <span>🍬 Swap adjacent candies to match 3+</span>
+      <button class="btn-secondary" id="restartBtn">Restart</button>
+    </footer>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
