@@ -740,6 +740,13 @@
     }
   });
 
+  // ---------- Offline support (service worker) ----------
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    });
+  }
+
   // ---------- Wire up ----------
   mapBtn.addEventListener('click', () => {
     ensureAudio();
