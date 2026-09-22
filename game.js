@@ -14,6 +14,26 @@
   ];
   const COLORS = CANDIES.map(c => c.color);
 
+  // ---------- Level definitions (Candy Crush style) ----------
+  const LEVELS = [];
+  (function initLevels() {
+    for (let i = 1; i <= 24; i++) {
+      const target = Math.floor(800 * Math.pow(1.22, i - 1) / 10) * 10;
+      const moves = Math.max(17, 32 - Math.floor((i - 1) / 2));
+      const types = Math.min(6, 5 + Math.floor((i - 1) / 4));
+      const base = { target, moves, types };
+      if (i % 4 === 0 && i < 24) {
+        base.collect = { candy: i % CANDIES.length, count: 12 + (i % 3) * 4 };
+      }
+      LEVELS.push(base);
+    }
+  })();
+
+  function getLevelConfig(l) {
+    const idx = Math.max(1, Math.min(LEVELS.length, l)) - 1;
+    return Object.assign({}, LEVELS[idx]);
+  }
+
   const state = {
     board: [],
     selected: null,
@@ -22,23 +42,31 @@
     level: 1,
     target: 1000,
     candyTypes: 5,
+    collected: 0,
     busy: false,
     running: false,
     firstMatch: true,
     save: { level: 1, best: {} },
   };
 
+  const gameView = document.getElementById('gameView');
+  const mapView = document.getElementById('mapView');
+  const mapListEl = document.getElementById('mapList');
+  const mapProgressEl = document.getElementById('mapProgress');
   const boardEl = document.getElementById('board');
   const scoreEl = document.getElementById('score');
   const movesEl = document.getElementById('moves');
   const levelEl = document.getElementById('level');
   const targetEl = document.getElementById('target');
+  const targetLabelEl = document.querySelector('#targetBox .hud-label');
   const progressEl = document.getElementById('progressFill');
   const overlayEl = document.getElementById('overlay');
   const overlayTitle = document.getElementById('overlayTitle');
   const overlayText = document.getElementById('overlayText');
   const overlayStarsEl = document.getElementById('overlayStars');
   const overlayBtn = document.getElementById('overlayBtn');
+  const overlayMapBtn = document.getElementById('overlayMapBtn');
+  const mapBtn = document.getElementById('mapBtn');
   const restartBtn = document.getElementById('restartBtn');
 
   // ---------- Audio (Web Audio API, no files needed) ----------
@@ -100,27 +128,36 @@
   }
 
   // ---------- Levels & progress ----------
-  function getLevelConfig(l) {
-    return {
-      target: Math.floor(1000 * Math.pow(1.3, l - 1) / 10) * 10,
-      moves: Math.max(18, 30 - Math.floor((l - 1) / 2)),
-      types: Math.min(6, 5 + Math.floor((l - 1) / 4)),
-    };
-  }
-
   function calcStars(score, target) {
     if (score >= Math.ceil(target * 1.5)) return 3;
     if (score >= Math.ceil(target * 1.25)) return 2;
     return 1;
   }
 
+  function isGoalMet() {
+    const cfg = getLevelConfig(state.level);
+    if (cfg.collect) return state.collected >= cfg.collect.count;
+    return state.score >= cfg.target;
+  }
+
+  function goalText(cfg) {
+    if (cfg.collect) {
+      return `Collect ${cfg.collect.count} ${CANDIES[cfg.collect.candy].emoji} in ${cfg.moves} moves.\nExtra score helps: ${cfg.target.toLocaleString()}`;
+    }
+    return `Reach ${cfg.target.toLocaleString()} points in ${cfg.moves} moves.`;
+  }
+
   // optional test hook (?dbg in URL)
   if (window.location.search.indexOf('dbg') !== -1) {
     window.__game = {
       state,
+      LEVELS,
       checkEndGame,
       calcStars,
-      startLevel,
+      isGoalMet,
+      goalText,
+      enterLevel,
+      openMap,
     };
   }
 
@@ -132,15 +169,12 @@
       if (raw) {
         const data = JSON.parse(raw);
         if (data && typeof data.level === 'number') {
-          const cfg = getLevelConfig(data.level);
+          const lvl = Math.max(1, Math.min(LEVELS.length, data.level));
           state.save = {
-            level: Math.min(data.level, 999),
+            level: lvl,
             best: (data.best && typeof data.best === 'object') ? data.best : {},
           };
-          state.level = Math.min(data.level, 999);
-          state.moves = cfg.moves;
-          state.target = cfg.target;
-          state.candyTypes = cfg.types;
+          state.level = lvl;
         }
       }
     } catch (e) {
@@ -189,12 +223,21 @@
   }
 
   function updateHud() {
+    const cfg = getLevelConfig(state.level);
     scoreEl.textContent = state.score.toLocaleString();
     movesEl.textContent = state.moves;
     levelEl.textContent = state.level;
-    targetEl.textContent = state.target.toLocaleString();
-    const pct = Math.min(100, Math.round((state.score / state.target) * 100));
-    progressEl.style.width = pct + '%';
+    let pct;
+    if (cfg.collect) {
+      targetLabelEl.textContent = 'Collect';
+      targetEl.textContent = `${CANDIES[cfg.collect.candy].emoji} ${Math.min(state.collected, cfg.collect.count)}/${cfg.collect.count}`;
+      pct = (state.collected / cfg.collect.count) * 100;
+    } else {
+      targetLabelEl.textContent = 'Target';
+      targetEl.textContent = cfg.target.toLocaleString();
+      pct = (state.score / cfg.target) * 100;
+    }
+    progressEl.style.width = Math.min(100, Math.round(pct)) + '%';
   }
 
   // ---------- Matching ----------
@@ -236,13 +279,11 @@
     const b = state.board;
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        // try right
         if (c + 1 < COLS) {
           [b[r][c], b[r][c + 1]] = [b[r][c + 1], b[r][c]];
           if (findAllMatches().length) { [b[r][c], b[r][c + 1]] = [b[r][c + 1], b[r][c]]; return true; }
           [b[r][c], b[r][c + 1]] = [b[r][c + 1], b[r][c]];
         }
-        // try down
         if (r + 1 < ROWS) {
           [b[r][c], b[r + 1][c]] = [b[r + 1][c], b[r][c]];
           if (findAllMatches().length) { [b[r][c], b[r + 1][c]] = [b[r + 1][c], b[r][c]]; return true; }
@@ -261,7 +302,6 @@
 
     const matches = findAllMatches();
     if (!matches.length) {
-      // invalid swap, reverse
       [b[r1][c1], b[r2][c2]] = [b[r2][c2], b[r1][c1]];
       sounds.bad();
       animateInvalid(r1, c1, r2, c2);
@@ -273,7 +313,6 @@
     state.moves--;
     sounds.swap();
     try {
-      // visually swap
       const el1 = cellEl(r1, c1);
       const el2 = cellEl(r2, c2);
       if (el1) el1.classList.add('swap-anim');
@@ -305,7 +344,6 @@
       const el = cellEl(r, c);
       if (el) {
         el.classList.add('pop-anim');
-        // clone stays visible while falling below
         const emoji = CANDIES[state.board[r][c]].emoji;
         const color = COLORS[state.board[r][c]];
         const ghost = document.createElement('div');
@@ -330,8 +368,14 @@
 
     await wait(360);
 
-    // mark removed
-    for (const { r, c } of matches) state.board[r][c] = null;
+    // mark removed + count collections
+    const cfg = getLevelConfig(state.level);
+    for (const { r, c } of matches) {
+      if (cfg.collect && state.board[r][c] === cfg.collect.candy) {
+        state.collected++;
+      }
+      state.board[r][c] = null;
+    }
 
     // gravity + refill
     applyGravity();
@@ -368,7 +412,6 @@
         }
       }
     }
-    // avoid leaving immediate matches
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         if (isPartOfMatch(state.board, r, c)) {
@@ -382,8 +425,7 @@
   }
 
   // ---------- Interaction ----------
-  // Supports both: tap-tap select, and Candy Crush style drag/swipe swap
-  let pointer = null; // { r, c, x, y, moved }
+  let pointer = null;
 
   function clearSelection() {
     if (state.selected) {
@@ -485,34 +527,47 @@
   }
 
   // ---------- Game flow ----------
-  function startLevel() {
-    ensureAudio();
-    const cfg = getLevelConfig(state.level);
+  function prepareLevel(lvl) {
+    const cfg = getLevelConfig(lvl);
+    state.level = lvl;
     state.score = 0;
+    state.collected = 0;
     state.moves = cfg.moves;
     state.target = cfg.target;
     state.candyTypes = cfg.types;
     state.firstMatch = true;
     state.selected = null;
     state.busy = false;
-    state.running = true;
+    state.running = false;
     state.board = createBoard();
     if (!anyMovesLeft()) state.board = createBoard();
-    saveProgress();
+  }
+
+  function beginLevel() {
+    state.running = true;
+    closeOverlay();
+  }
+
+  function enterLevel(lvl, withIntro) {
+    ensureAudio();
+    prepareLevel(lvl);
+    closeMap();
     render();
     updateHud();
-    closeOverlay();
+    if (withIntro) showIntro();
+    else beginLevel();
   }
 
   function startNewGame() {
     state.level = 1;
     state.save = { level: 1, best: {} };
     localStorage.removeItem(SAVE_KEY);
-    startLevel();
+    enterLevel(1, false);
   }
 
   function closeOverlay() {
     overlayEl.classList.add('hidden');
+    overlayMapBtn.classList.add('hidden');
   }
 
   function renderStars(stars) {
@@ -524,36 +579,150 @@
     overlayStarsEl.classList.remove('hidden');
   }
 
-  function showOverlay(title, text, btnLabel, stars) {
+  function showOverlay(title, text, primaryLabel, stars, secondaryLabel) {
     overlayTitle.textContent = title;
     overlayText.textContent = text;
-    overlayBtn.textContent = btnLabel;
+    overlayBtn.textContent = primaryLabel;
     if (typeof stars === 'number') renderStars(stars);
     else overlayStarsEl.classList.add('hidden');
+    if (secondaryLabel) {
+      overlayMapBtn.textContent = secondaryLabel;
+      overlayMapBtn.classList.remove('hidden');
+    } else {
+      overlayMapBtn.classList.add('hidden');
+    }
     overlayEl.classList.remove('hidden');
   }
 
+  function showIntro() {
+    const cfg = getLevelConfig(state.level);
+    showOverlay(`Level ${state.level}`, goalText(cfg), 'Play', undefined, 'Map');
+    overlayBtn.onclick = () => beginLevel();
+    overlayMapBtn.onclick = () => openMap();
+  }
+
   function checkEndGame() {
-    if (state.moves <= 0) {
-      if (state.score >= state.target) {
+    if (state.moves <= 0 || isGoalMet()) {
+      if (isGoalMet()) {
         state.running = false;
         sounds.win();
         const stars = calcStars(state.score, state.target);
         recordCompletion(state.level, state.score, stars);
-        state.level++;
+        const next = state.level + 1;
+        state.save.level = Math.min(LEVELS.length, Math.max(state.save.level, next));
         saveProgress();
-        showOverlay('Level Complete! 🎉',
-          `You scored ${state.score.toLocaleString()} points with ${stars} star${stars > 1 ? 's' : ''}.`,
-          'Next Level', stars);
-        overlayBtn.onclick = () => startLevel();
+        const cfg = getLevelConfig(state.level);
+        const resultText = cfg.collect
+          ? `Collected ${Math.min(state.collected, cfg.collect.count)}/${cfg.collect.count} ${CANDIES[cfg.collect.candy].emoji}`
+          : `Scored ${state.score.toLocaleString()}`;
+        const hasNext = state.level < LEVELS.length;
+        showOverlay('Level Complete! 🎉', `${resultText} with ${stars} star${stars > 1 ? 's' : ''}.`, hasNext ? 'Next Level' : 'Map', stars, hasNext ? undefined : undefined);
+        overlayBtn.onclick = () => {
+          if (hasNext) enterLevel(state.level + 1, false);
+          else openMap();
+        };
       } else {
         state.running = false;
         sounds.lose();
-        showOverlay('Out of Moves 😢', `Score: ${state.score.toLocaleString()} / Target: ${state.target.toLocaleString()}`, 'Try Again');
-        overlayBtn.onclick = () => startLevel();
+        const cfg = getLevelConfig(state.level);
+        const goalTextNow = cfg.collect
+          ? `Collect ${cfg.collect.count} ${CANDIES[cfg.collect.candy].emoji} · ${state.collected}/${cfg.collect.count}`
+          : `Reach ${cfg.target.toLocaleString()} · ${state.score.toLocaleString()}`;
+        showOverlay('Level Failed 😢', `Out of moves!\nGoal: ${goalTextNow}`, 'Try Again', undefined, 'Map');
+        overlayBtn.onclick = () => enterLevel(state.level, false);
+        overlayMapBtn.onclick = () => openMap();
       }
     }
   }
+
+  // ---------- Level map (Candy Crush style) ----------
+  function openMap() {
+    state.running = false;
+    renderMap();
+    gameView.classList.add('hidden');
+    mapView.classList.remove('hidden');
+  }
+
+  function closeMap() {
+    mapView.classList.add('hidden');
+    gameView.classList.remove('hidden');
+  }
+
+  function renderMap() {
+    mapListEl.innerHTML = '';
+    const done = Object.keys(state.save.best).length;
+    mapProgressEl.textContent = `${done} / ${LEVELS.length} complete`;
+
+    const tile = 56, gapX = 74, gapY = 96, marginX = 34, top = 34;
+    const perRow = 4;
+    const rows = Math.ceil(LEVELS.length / perRow);
+
+    // winding path points
+    const points = [];
+    for (let i = 1; i <= LEVELS.length; i++) {
+      const row = Math.floor((i - 1) / perRow);
+      let col = (i - 1) % perRow;
+      if (row % 2 === 1) col = perRow - 1 - col;
+      const x = marginX + col * gapX;
+      const y = top + row * gapY;
+      points.push({ x, y, i });
+    }
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'map-path');
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', rows * gapY + top * 2);
+    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const d = points.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p.x + tile / 2} ${p.y + tile / 2}`).join(' ');
+    poly.setAttribute('d', d);
+    poly.setAttribute('fill', 'none');
+    poly.setAttribute('stroke', 'rgba(255,255,255,0.45)');
+    poly.setAttribute('stroke-width', '6');
+    poly.setAttribute('stroke-linecap', 'round');
+    poly.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(poly);
+    mapListEl.appendChild(svg);
+
+    const max = state.save.level;
+    for (const p of points) {
+      const cfg = LEVELS[p.i - 1];
+      const best = state.save.best[p.i];
+      const unlocked = p.i <= max;
+      const isCur = unlocked && p.i >= max;
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'level-bubble' + (best ? ' done' : '') + (isCur ? ' current' : '') + (unlocked ? '' : ' locked');
+      el.dataset.level = p.i;
+      el.style.left = p.x + 'px';
+      el.style.top = p.y + 'px';
+      let inner = `<span class="bubble-num">${p.i}</span>`;
+      if (best) {
+        inner += `<span class="bubble-stars">${'★'.repeat(best.stars)}<span class="star-dim">${'★'.repeat(3 - best.stars)}</span></span>`;
+      }
+      if (!unlocked) {
+        el.innerHTML = `<span class="bubble-num">🔒</span>`;
+      } else if (isCur && !best) {
+        el.innerHTML = `${inner}<span class="bubble-tag">PLAY</span>`;
+      } else {
+        el.innerHTML = inner;
+      }
+      if (cfg.collect && unlocked) {
+        el.title = `Level ${p.i}: collect ${cfg.collect.count} ${CANDIES[cfg.collect.candy].emoji}`;
+      }
+      mapListEl.appendChild(el);
+    }
+
+    const h = rows * gapY + top * 2;
+    mapListEl.style.height = Math.min(h + 24, 540) + 'px';
+  }
+
+  mapListEl.addEventListener('click', (e) => {
+    const b = e.target.closest('.level-bubble');
+    if (!b) return;
+    const lvl = +b.dataset.level;
+    if (lvl > state.save.level) return;
+    enterLevel(lvl, true);
+  });
 
   // ---------- Helpers ----------
   function wait(ms) {
@@ -565,7 +734,6 @@
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
     if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R'))) {
-      // allow refresh only when not actively playing a running level
       if (state.running && !state.busy) {
         saveProgress();
       }
@@ -573,31 +741,28 @@
   });
 
   // ---------- Wire up ----------
-  overlayBtn.addEventListener('click', () => {
+  mapBtn.addEventListener('click', () => {
     ensureAudio();
-    startLevel();
+    openMap();
   });
 
   restartBtn.addEventListener('click', () => {
     ensureAudio();
-    startLevel();
+    enterLevel(state.level, false);
+  });
+
+  overlayBtn.addEventListener('click', () => {
+    ensureAudio();
+    beginLevel();
+  });
+
+  overlayMapBtn.addEventListener('click', () => {
+    openMap();
   });
 
   // ---------- Boot ----------
   loadProgress();
-  updateHud();
-  render();
-  if (state.save.level > 1) {
-    state.level = state.save.level;
-    updateHud();
-    showOverlay('Welcome Back! 👋',
-      `Continuing from Level ${state.level}.`,
-      'Play');
-    overlayBtn.onclick = () => startLevel();
-  } else {
-    showOverlay('Candy Crush 🍬',
-      'Match 3+ candies before moves run out!\nMore stars = higher score.',
-      'Play');
-    overlayBtn.onclick = () => startLevel();
-  }
+  renderMap();
+  gameView.classList.add('hidden');
+  mapView.classList.remove('hidden');
 })();

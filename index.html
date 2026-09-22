@@ -9,45 +9,68 @@
 </head>
 <body>
   <div class="game-container">
-    <header class="hud">
-      <div class="hud-item">
-        <span class="hud-label">Score</span>
-        <span class="hud-value" id="score">0</span>
-      </div>
-      <div class="hud-item">
-        <span class="hud-label">Moves</span>
-        <span class="hud-value" id="moves">30</span>
-      </div>
-      <div class="hud-item">
-        <span class="hud-label">Level</span>
-        <span class="hud-value" id="level">1</span>
-      </div>
-      <div class="hud-item">
-        <span class="hud-label">Target</span>
-        <span class="hud-value" id="target">1000</span>
-      </div>
+
+    <header class="brand">
+      <span class="brand-title">🍬 Candy Crush</span>
     </header>
 
-    <div class="progress-bar">
-      <div class="progress-fill" id="progressFill"></div>
-    </div>
+    <!-- LEVEL MAP -->
+    <section id="mapView" class="view">
+      <header class="map-header">
+        <h2>Choose a Level</h2>
+        <span class="map-stats" id="mapProgress"></span>
+      </header>
+      <div id="mapList" class="map-list"></div>
+    </section>
 
-    <div class="board-wrapper">
-      <div class="board" id="board"></div>
-      <div class="overlay" id="overlay">
-        <div class="overlay-card">
-          <h1 id="overlayTitle">Candy Crush</h1>
-          <p id="overlayText">Match 3 or more candies to score!</p>
-          <div class="overlay-stars hidden" id="overlayStars"></div>
-          <button type="button" id="overlayBtn">Play</button>
+    <!-- GAME -->
+    <section id="gameView" class="view hidden">
+      <header class="hud">
+        <div class="hud-item">
+          <span class="hud-label">Score</span>
+          <span class="hud-value" id="score">0</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Moves</span>
+          <span class="hud-value" id="moves">30</span>
+        </div>
+        <div class="hud-item">
+          <span class="hud-label">Level</span>
+          <span class="hud-value" id="level">1</span>
+        </div>
+        <div class="hud-item" id="targetBox">
+          <span class="hud-label">Target</span>
+          <span class="hud-value" id="target">1000</span>
+        </div>
+      </header>
+
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+
+      <div class="board-wrapper">
+        <div class="board" id="board"></div>
+        <div class="overlay" id="overlay">
+          <div class="overlay-card">
+            <h1 id="overlayTitle">Level 1</h1>
+            <p id="overlayText"></p>
+            <div class="overlay-stars hidden" id="overlayStars"></div>
+            <div class="overlay-actions">
+              <button type="button" id="overlayMapBtn">Map</button>
+              <button type="button" id="overlayBtn">Play</button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <footer class="tips">
-      <span>🍬 Swap adjacent candies to match 3+</span>
-      <button type="button" class="btn-secondary" id="restartBtn">Restart</button>
-    </footer>
+      <footer class="tips">
+        <span>🍬 Swap candies to match 3+</span>
+        <div class="btn-row">
+          <button type="button" class="btn-secondary" id="mapBtn">🗺️ Map</button>
+          <button type="button" class="btn-secondary" id="restartBtn">🔄 Restart</button>
+        </div>
+      </footer>
+    </section>
   </div>
 
   <script src="game.js"></script>
