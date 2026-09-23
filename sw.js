@@ -1,4 +1,4 @@
-const CACHE = 'candy-crush-v1';
+const CACHE = 'candy-crush-v2';
 const ASSETS = [
   './',
   './index.html',
