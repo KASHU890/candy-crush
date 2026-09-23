@@ -31,7 +31,22 @@
 
   function getLevelConfig(l) {
     const idx = Math.max(1, Math.min(LEVELS.length, l)) - 1;
-    return Object.assign({}, LEVELS[idx]);
+    const base = LEVELS[idx];
+    const cfg = Object.assign({}, base);
+    if (cfg.collect) cfg.collect = Object.assign({}, base.collect);
+    const d = state.difficulty;
+    if (d === 'easy') {
+      cfg.target = Math.max(300, Math.floor(base.target * 0.7 / 10) * 10);
+      cfg.moves = base.moves + 4;
+      cfg.types = Math.max(3, base.types - 1);
+      if (cfg.collect) cfg.collect.count = Math.max(4, Math.floor(base.collect.count * 0.65));
+    } else if (d === 'hard') {
+      cfg.target = Math.floor(base.target * 1.4 / 10) * 10;
+      cfg.moves = Math.max(14, base.moves - 3);
+      cfg.types = Math.min(6, base.types + 1);
+      if (cfg.collect) cfg.collect.count = base.collect.count + 2;
+    }
+    return cfg;
   }
 
   const state = {
@@ -46,8 +61,23 @@
     busy: false,
     running: false,
     firstMatch: true,
-    save: { level: 1, best: {} },
+    difficulty: 'medium',
+    save: makeFreshSave(),
   };
+
+  function makeFreshSave() {
+    return {
+      diff: {
+        easy: { level: 1, best: {} },
+        medium: { level: 1, best: {} },
+        hard: { level: 1, best: {} },
+      },
+    };
+  }
+
+  function curSave() {
+    return state.save.diff[state.difficulty];
+  }
 
   const gameView = document.getElementById('gameView');
   const mapView = document.getElementById('mapView');
@@ -152,6 +182,7 @@
     window.__game = {
       state,
       LEVELS,
+      getLevelConfig,
       checkEndGame,
       calcStars,
       isGoalMet,
@@ -175,18 +206,32 @@
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         const data = JSON.parse(raw);
-        if (data && typeof data.level === 'number') {
-          const lvl = Math.max(1, Math.min(LEVELS.length, data.level));
+        if (data && data.diff && typeof data.diff === 'object') {
+          const diff = data.diff;
           state.save = {
-            level: lvl,
-            best: (data.best && typeof data.best === 'object') ? data.best : {},
+            diff: {
+              easy: normalizeDiffSave(diff.easy),
+              medium: normalizeDiffSave(diff.medium),
+              hard: normalizeDiffSave(diff.hard),
+            },
           };
-          state.level = lvl;
+        } else if (data && typeof data.level === 'number') {
+          state.save = makeFreshSave();
+          const migrated = normalizeDiffSave({ level: data.level, best: (data.best && typeof data.best === 'object') ? data.best : {} });
+          state.save.diff.medium = migrated;
         }
       }
     } catch (e) {
-      state.save = { level: 1, best: {} };
+      state.save = makeFreshSave();
     }
+  }
+
+  function normalizeDiffSave(s, lvl) {
+    const o = (s && typeof s === 'object') ? s : {};
+    return {
+      level: Math.max(1, Math.min(LEVELS.length, (typeof o.level === 'number' ? o.level : lvl || 1))),
+      best: (o.best && typeof o.best === 'object') ? o.best : {},
+    };
   }
 
   function saveProgress() {
@@ -196,9 +241,10 @@
   }
 
   function recordCompletion(level, score, stars) {
-    const prev = state.save.best[level];
+    const cur = curSave();
+    const prev = cur.best[level];
     if (!prev || score > prev.score) {
-      state.save.best[level] = { score, stars };
+      cur.best[level] = { score, stars };
     }
   }
 
@@ -233,7 +279,7 @@
     const cfg = getLevelConfig(state.level);
     scoreEl.textContent = state.score.toLocaleString();
     movesEl.textContent = state.moves;
-    levelEl.textContent = state.level;
+    levelEl.textContent = state.level + ' · ' + state.difficulty[0].toUpperCase();
     let pct;
     if (cfg.collect) {
       targetLabelEl.textContent = 'Collect';
@@ -591,7 +637,7 @@
 
   function startNewGame() {
     state.level = 1;
-    state.save = { level: 1, best: {} };
+    state.save = makeFreshSave();
     localStorage.removeItem(SAVE_KEY);
     enterLevel(1, false);
   }
@@ -640,7 +686,7 @@
         const stars = calcStars(state.score, state.target);
         recordCompletion(state.level, state.score, stars);
         const next = state.level + 1;
-        state.save.level = Math.min(LEVELS.length, Math.max(state.save.level, next));
+        curSave().level = Math.min(LEVELS.length, Math.max(curSave().level, next));
         saveProgress();
         const cfg = getLevelConfig(state.level);
         const resultText = cfg.collect
@@ -681,7 +727,8 @@
 
   function renderMap() {
     mapListEl.innerHTML = '';
-    const done = Object.keys(state.save.best).length;
+    const cur = curSave();
+    const done = Object.keys(cur.best).length;
     mapProgressEl.textContent = `${done} / ${LEVELS.length} complete`;
 
     const tile = 56, gapX = 74, gapY = 96, marginX = 34, top = 34;
@@ -714,10 +761,10 @@
     svg.appendChild(poly);
     mapListEl.appendChild(svg);
 
-    const max = state.save.level;
+    const max = cur.level;
     for (const p of points) {
       const cfg = LEVELS[p.i - 1];
-      const best = state.save.best[p.i];
+      const best = cur.best[p.i];
       const unlocked = p.i <= max;
       const isCur = unlocked && p.i >= max;
       const el = document.createElement('button');
@@ -751,8 +798,29 @@
     const b = e.target.closest('.level-bubble');
     if (!b) return;
     const lvl = +b.dataset.level;
-    if (lvl > state.save.level) return;
+    if (lvl > curSave().level) return;
     enterLevel(lvl, true);
+  });
+
+  const diffRow = document.getElementById('diffRow');
+  const diffBtns = diffRow ? Array.from(diffRow.querySelectorAll('.diff-btn')) : [];
+
+  function setDifficulty(d) {
+    if (!state.save.diff[d]) return;
+    state.difficulty = d;
+    state.level = curSave().level;
+    saveProgress();
+    for (const btn of diffBtns) {
+      btn.classList.toggle('active', btn.dataset.diff === d);
+    }
+    renderMap();
+  }
+
+  diffRow.addEventListener('click', (e) => {
+    const btn = e.target.closest('.diff-btn');
+    if (!btn || btn.dataset.diff === state.difficulty) return;
+    ensureAudio();
+    setDifficulty(btn.dataset.diff);
   });
 
   // ---------- Helpers ----------
@@ -800,7 +868,7 @@
 
   // ---------- Boot ----------
   loadProgress();
-  renderMap();
+  setDifficulty(state.difficulty);
   gameView.classList.add('hidden');
   mapView.classList.remove('hidden');
 })();

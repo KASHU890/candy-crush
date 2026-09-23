@@ -333,6 +333,44 @@ body {
   border-radius: 20px;
 }
 
+/* ---------- Difficulty selector ---------- */
+.diff-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 0 0 10px 0;
+}
+
+.diff-btn {
+  flex: 1;
+  border: none;
+  border-radius: 30px;
+  padding: 8px 0;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.5px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.diff-btn:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.diff-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+}
+
+.diff-btn.active {
+  background: linear-gradient(160deg, #ffd93d, #ff9f1c);
+  color: #5a3b10;
+  box-shadow: 0 5px 0 #c79217;
+}
+
 .map-list {
   position: relative;
   overflow-y: auto;
