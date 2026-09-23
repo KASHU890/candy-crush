@@ -158,6 +158,13 @@
       goalText,
       enterLevel,
       openMap,
+      trySwap,
+      shuffleBoard,
+      resolveIfStuck,
+      createBoard,
+      findAllMatches,
+      anyMovesLeft,
+      cascadePeak: () => cascadePeak,
     };
   }
 
@@ -337,6 +344,7 @@
 
     if (combo > 1) sounds.combo(combo);
     else sounds.match(matches.length);
+    if (combo > cascadePeak) cascadePeak = combo;
 
     // pop animation
     for (const { r, c } of matches) {
@@ -388,6 +396,9 @@
     const next = findAllMatches();
     if (next.length) {
       await processMatches(next, combo + 1);
+    } else {
+      const shuffled = resolveIfStuck();
+      if (shuffled) await shuffled;
     }
   }
 
@@ -407,22 +418,38 @@
   function refillBoard() {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
-        if (state.board[r][c] === null) {
+        if (state.board[r][c] === null || state.board[r][c] === undefined) {
           state.board[r][c] = randomCandy();
-        }
-      }
-    }
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        if (isPartOfMatch(state.board, r, c)) {
-          state.board[r][c] = randomCandy();
-          if (isPartOfMatch(state.board, r, c)) {
-            state.board[r][c] = (state.board[r][c] + 1) % CANDIES.length;
-          }
         }
       }
     }
   }
+
+  async function shuffleBoard() {
+    let tries = 0;
+    do {
+      state.board = createBoard();
+      tries++;
+    } while (!anyMovesLeft() && tries < 200);
+    render();
+    if (boardEl) {
+      boardEl.classList.add('shuffle-anim');
+      sounds.bad();
+      await wait(500);
+      boardEl.classList.remove('shuffle-anim');
+    }
+    updateHud();
+  }
+
+  function resolveIfStuck() {
+    if (state.running && state.moves > 0 && !isGoalMet() && !anyMovesLeft()) {
+      return shuffleBoard();
+    }
+    return null;
+  }
+
+  // Sync-able declared vars
+  let cascadePeak = 0;
 
   // ---------- Interaction ----------
   let pointer = null;
@@ -540,7 +567,11 @@
     state.busy = false;
     state.running = false;
     state.board = createBoard();
-    if (!anyMovesLeft()) state.board = createBoard();
+    let guard = 0;
+    while (!anyMovesLeft() && guard < 200) {
+      state.board = createBoard();
+      guard++;
+    }
   }
 
   function beginLevel() {
